@@ -809,11 +809,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr><td>001300</td><td>Adriano Andrei S. Machado</td><td><span class="badge ok">VOTOU</span></td></tr>
-              <tr><td>000291</td><td>Adriano Gomes dos Santos</td><td><span class="badge wait">NÃO VOTOU</span></td></tr>
-              <tr><td>001057</td><td>Aguilene Facao Pereira</td><td><span class="badge ok">VOTOU</span></td></tr>
-              <tr><td>001513</td><td>Alan Fernandes de Souza</td><td><span class="badge wait">NÃO VOTOU</span></td></tr>
-              <tr><td>001515</td><td>Alan Vechiatti de Souza</td><td><span class="badge ok">VOTOU</span></td></tr>
+              <tr><td colspan="3">Carregando eleitores...</td></tr>
             </tbody>
           </table>
         </div>
@@ -843,15 +839,8 @@
           <div class="updated">Somente consulta</div>
         </div>
 
-        <div class="candidate-admin-grid">
-          <div class="candidate-admin-card"><div class="avatar">CA</div><div class="num">01</div><div class="name">Carlos Almeida</div><div class="sector">Produção</div></div>
-          <div class="candidate-admin-card"><div class="avatar">MS</div><div class="num">02</div><div class="name">Mariana Souza</div><div class="sector">Qualidade</div></div>
-          <div class="candidate-admin-card"><div class="avatar">RS</div><div class="num">03</div><div class="name">Rafael Santos</div><div class="sector">Manutenção</div></div>
-          <div class="candidate-admin-card"><div class="avatar">FL</div><div class="num">04</div><div class="name">Fernanda Lima</div><div class="sector">Logística</div></div>
-          <div class="candidate-admin-card"><div class="avatar">EM</div><div class="num">05</div><div class="name">Eduardo Martins</div><div class="sector">Sopro</div></div>
-          <div class="candidate-admin-card"><div class="avatar">PO</div><div class="num">06</div><div class="name">Patrícia Oliveira</div><div class="sector">Injeção</div></div>
-          <div class="candidate-admin-card"><div class="avatar">JS</div><div class="num">07</div><div class="name">João Silva</div><div class="sector">Expedição</div></div>
-          <div class="candidate-admin-card"><div class="avatar">AR</div><div class="num">08</div><div class="name">Amanda Ribeiro</div><div class="sector">Laboratório</div></div>
+        <div class="candidate-admin-grid" id="candidateAdminGrid">
+          <div class="candidate-admin-card">Carregando candidatos...</div>
         </div>
       </section>
 
@@ -890,8 +879,8 @@
             <p>Controle manual de abertura e encerramento.</p>
 
             <div class="state-box">
-              <strong>STATUS ATUAL: ABERTA</strong><br>
-              <span style="color:#5f6a62;font-size:13px">Aberta em 28/08/2026 08:00</span>
+              <strong id="configStatus">CARREGANDO...</strong><br>
+              <span id="configStatusData" style="color:#5f6a62;font-size:13px">Consultando...</span>
             </div>
 
             <button class="primary-btn" id="settingsEndElection" style="width:100%;background:#b42318">
@@ -902,7 +891,7 @@
           <div class="settings-card">
             <h3>Nova eleição</h3>
             <p>Depois que a eleição atual for encerrada, será possível preparar um novo período. O sistema arquivará a eleição anterior antes da limpeza.</p>
-            <button class="outline-btn" disabled>PREPARAR NOVA ELEIÇÃO</button>
+            <button class="outline-btn" id="prepareNewElectionBtn" disabled>PREPARAR NOVA ELEIÇÃO</button>
           </div>
         </div>
       </section>
@@ -1129,6 +1118,9 @@
         adminApp.classList.remove("hidden");
 
         await carregarDashboard();
+        await carregarEleitoresAdmin();
+        await carregarCandidatosAdmin();
+        await carregarConfiguracoesAdmin();
         iniciarAtualizacaoAutomatica();
 
       }catch(erro){
@@ -1165,6 +1157,192 @@
       }
     });
 
+
+    async function carregarEleitoresAdmin(){
+      const tbody = document.querySelector("#electorTable tbody");
+
+      try{
+        const resultado = await chamarBackend({
+          acao: "ELEITORES_ADMIN",
+          token: adminToken
+        });
+
+        if(!resultado.sucesso){
+          if(resultado.codigo === "ADMIN_NAO_AUTORIZADO"){
+            mostrarLogin("Sua sessão expirou. Entre novamente.");
+            return;
+          }
+
+          throw new Error(resultado.mensagem || "Falha ao carregar eleitores.");
+        }
+
+        const eleitores = Array.isArray(resultado.eleitores)
+          ? resultado.eleitores
+          : [];
+
+        tbody.innerHTML = "";
+
+        if(eleitores.length === 0){
+          tbody.innerHTML =
+            '<tr><td colspan="3">Nenhum eleitor cadastrado.</td></tr>';
+          return;
+        }
+
+        eleitores.forEach(eleitor => {
+          const tr = document.createElement("tr");
+
+          const votou = eleitor.situacao === "VOTOU";
+
+          tr.innerHTML = `
+            <td>${eleitor.matricula}</td>
+            <td>${eleitor.nome}</td>
+            <td>
+              <span class="badge ${votou ? "ok" : "wait"}">
+                ${votou ? "VOTOU" : "NÃO VOTOU"}
+              </span>
+            </td>
+          `;
+
+          tbody.appendChild(tr);
+        });
+
+      }catch(erro){
+        console.error(erro);
+        tbody.innerHTML =
+          '<tr><td colspan="3">Não foi possível carregar os eleitores.</td></tr>';
+      }
+    }
+
+    function getInitials(nome){
+      return String(nome || "")
+        .split(" ")
+        .filter(Boolean)
+        .slice(0, 2)
+        .map(parte => parte[0])
+        .join("")
+        .toUpperCase();
+    }
+
+    async function carregarCandidatosAdmin(){
+      const grid = document.getElementById("candidateAdminGrid");
+
+      try{
+        const resultado = await chamarBackend({
+          acao: "CANDIDATOS_ADMIN",
+          token: adminToken
+        });
+
+        if(!resultado.sucesso){
+          if(resultado.codigo === "ADMIN_NAO_AUTORIZADO"){
+            mostrarLogin("Sua sessão expirou. Entre novamente.");
+            return;
+          }
+
+          throw new Error(resultado.mensagem || "Falha ao carregar candidatos.");
+        }
+
+        const candidatos = Array.isArray(resultado.candidatos)
+          ? resultado.candidatos
+          : [];
+
+        grid.innerHTML = "";
+
+        if(candidatos.length === 0){
+          grid.innerHTML =
+            '<div class="candidate-admin-card">Nenhum candidato cadastrado.</div>';
+          return;
+        }
+
+        candidatos.forEach(candidato => {
+          const card = document.createElement("div");
+          card.className = "candidate-admin-card";
+
+          const foto = String(candidato.foto || "").trim();
+          const src = foto
+            ? (/^https?:\/\//i.test(foto)
+                ? foto
+                : `assets/candidatos/${foto}`)
+            : "";
+
+          const avatar = src
+            ? `<div class="avatar" style="overflow:hidden">
+                 <img src="${src}" alt="${candidato.nome}"
+                      style="width:100%;height:100%;object-fit:cover"
+                      onerror="this.parentElement.textContent='${getInitials(candidato.nome)}'">
+               </div>`
+            : `<div class="avatar">${getInitials(candidato.nome)}</div>`;
+
+          card.innerHTML = `
+            ${avatar}
+            <div class="num">${candidato.numero}</div>
+            <div class="name">${candidato.nome}</div>
+            <div class="sector">${candidato.setor || ""}</div>
+          `;
+
+          grid.appendChild(card);
+        });
+
+      }catch(erro){
+        console.error(erro);
+        grid.innerHTML =
+          '<div class="candidate-admin-card">Não foi possível carregar os candidatos.</div>';
+      }
+    }
+
+    async function carregarConfiguracoesAdmin(){
+      try{
+        const resultado = await chamarBackend({
+          acao: "CONFIGURACOES_ADMIN",
+          token: adminToken
+        });
+
+        if(!resultado.sucesso){
+          if(resultado.codigo === "ADMIN_NAO_AUTORIZADO"){
+            mostrarLogin("Sua sessão expirou. Entre novamente.");
+            return;
+          }
+
+          throw new Error(resultado.mensagem || "Falha ao carregar configurações.");
+        }
+
+        const c = resultado.configuracoes;
+
+        const status = document.getElementById("configStatus");
+        const data = document.getElementById("configStatusData");
+        const endBtn = document.getElementById("settingsEndElection");
+        const newBtn = document.getElementById("prepareNewElectionBtn");
+
+        if(c.status === "ABERTA"){
+          status.textContent = "STATUS ATUAL: ABERTA";
+          data.textContent =
+            c.dataAbertura ? `Aberta em ${c.dataAbertura}` : "Eleição aberta";
+          endBtn.style.display = "";
+          endBtn.disabled = false;
+          newBtn.disabled = true;
+
+        }else if(c.status === "ENCERRADA"){
+          status.textContent = "STATUS ATUAL: ENCERRADA";
+          data.textContent =
+            c.dataEncerramento ? `Encerrada em ${c.dataEncerramento}` : "Eleição encerrada";
+          endBtn.style.display = "none";
+          newBtn.disabled = false;
+
+        }else{
+          status.textContent = "STATUS ATUAL: NÃO INICIADA";
+          data.textContent = "Aguardando abertura da eleição";
+          endBtn.style.display = "none";
+          newBtn.disabled = true;
+        }
+
+      }catch(erro){
+        console.error(erro);
+        document.getElementById("configStatus").textContent =
+          "NÃO FOI POSSÍVEL CARREGAR";
+        document.getElementById("configStatusData").textContent =
+          "Falha de comunicação.";
+      }
+    }
+
     const menuButtons = document.querySelectorAll(".menu button[data-page]");
     const pages = document.querySelectorAll(".page");
 
@@ -1176,6 +1354,11 @@
         const page = button.dataset.page;
         pages.forEach(p => p.classList.remove("active"));
         document.getElementById(`page-${page}`).classList.add("active");
+
+        if(page === "dashboard") carregarDashboard(false);
+        if(page === "eleitores") carregarEleitoresAdmin();
+        if(page === "candidatos") carregarCandidatosAdmin();
+        if(page === "configuracoes") carregarConfiguracoesAdmin();
       });
     });
 
@@ -1227,7 +1410,12 @@
       loginScreen.classList.add("hidden");
       adminApp.classList.remove("hidden");
 
-      carregarDashboard().then(() => {
+      Promise.all([
+        carregarDashboard(),
+        carregarEleitoresAdmin(),
+        carregarCandidatosAdmin(),
+        carregarConfiguracoesAdmin()
+      ]).then(() => {
         if(adminToken){
           iniciarAtualizacaoAutomatica();
         }
