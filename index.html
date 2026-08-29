@@ -772,6 +772,7 @@
     let eleitorAtual = null;
 
     let escolhaAtual = null;
+    let idVotoAtual = null;
     let contadorInterval = null;
 
     const screens = {
@@ -857,6 +858,8 @@
     }
 
     function selectCandidate(index){
+      idVotoAtual = null;
+
       escolhaAtual = {
         tipo: "CANDIDATO",
         candidato: candidatos[index]
@@ -873,6 +876,8 @@
     }
 
     function selectBlankVote(){
+      idVotoAtual = null;
+
       escolhaAtual = {
         tipo: "BRANCO"
       };
@@ -894,8 +899,27 @@
       advanceBtn.disabled = true;
     }
 
+    function gerarIdVotoCliente(){
+      let uuid = "";
+
+      if(window.crypto && typeof window.crypto.randomUUID === "function"){
+        uuid = window.crypto.randomUUID().replace(/-/g, "").toUpperCase();
+      }else{
+        uuid =
+          Date.now().toString(36).toUpperCase() +
+          "_" +
+          Math.random().toString(36).slice(2).toUpperCase();
+      }
+
+      return `CIPA_2026_${uuid}`;
+    }
+
     function openConfirmation(){
       if(!escolhaAtual) return;
+
+      if(!idVotoAtual){
+        idVotoAtual = gerarIdVotoCliente();
+      }
 
       if(escolhaAtual.tipo === "BRANCO"){
         confirmPhoto.innerHTML = `
@@ -931,6 +955,7 @@
       }
 
       eleitorAtual = null;
+      idVotoAtual = null;
       matricula.value = "";
       nascimento.value = "";
       loginMessage.textContent = "";
@@ -940,6 +965,8 @@
       correctBtn.disabled = false;
       confirmBackTop.disabled = false;
       savingText.style.display = "none";
+      savingText.style.color = "";
+      savingText.textContent = "Registrando seu voto...";
 
       clearSelection();
       showScreen("login");
@@ -1090,20 +1117,85 @@
     document.getElementById("backToLogin").addEventListener("click", resetApp);
     document.getElementById("exitVote").addEventListener("click", resetApp);
 
-    confirmVoteBtn.addEventListener("click", () => {
-      if(!escolhaAtual) return;
+    confirmVoteBtn.addEventListener("click", async () => {
+      if(!escolhaAtual || !eleitorAtual) return;
+
+      if(!idVotoAtual){
+        idVotoAtual = gerarIdVotoCliente();
+      }
 
       confirmVoteBtn.disabled = true;
       correctBtn.disabled = true;
       confirmBackTop.disabled = true;
+
+      savingText.style.color = "";
+      savingText.textContent = "Registrando seu voto...";
       savingText.style.display = "block";
 
-      // Simula o tempo de comunicação com o servidor.
-      setTimeout(() => {
-        savingText.style.display = "none";
-        showScreen("success");
-        startSuccessCountdown();
-      }, 900);
+      try{
+        const numeroCandidato =
+          escolhaAtual.tipo === "CANDIDATO"
+            ? escolhaAtual.candidato.numero
+            : "";
+
+        const resultado = await chamarBackend({
+          acao: "REGISTRAR_VOTO",
+          matricula: eleitorAtual.matricula,
+          dataNascimento: eleitorAtual.dataNascimento,
+          tipo: escolhaAtual.tipo,
+          numeroCandidato: numeroCandidato,
+          idVoto: idVotoAtual
+        });
+
+        if(
+          resultado.sucesso &&
+          (
+            resultado.codigo === "VOTO_REGISTRADO" ||
+            resultado.codigo === "VOTO_JA_PROCESSADO"
+          )
+        ){
+          savingText.style.display = "none";
+
+          // Remove os dados do eleitor da memória da página após confirmação.
+          eleitorAtual = null;
+
+          showScreen("success");
+          startSuccessCountdown();
+          return;
+        }
+
+        savingText.style.color = "#b42318";
+        savingText.textContent =
+          resultado.mensagem || "Não foi possível registrar o voto.";
+
+        // Erros definitivos não devem continuar com o mesmo ID.
+        if(
+          resultado.codigo === "ELEICAO_FECHADA" ||
+          resultado.codigo === "JA_VOTOU" ||
+          resultado.codigo === "CANDIDATO_INEXISTENTE" ||
+          resultado.codigo === "CANDIDATO_INVALIDO" ||
+          resultado.codigo === "TIPO_VOTO_INVALIDO"
+        ){
+          idVotoAtual = null;
+        }
+
+      }catch(erro){
+        console.error(erro);
+
+        /*
+          Em falha de rede, o ID NÃO é alterado.
+          Se o servidor tiver recebido o voto mas a resposta não voltar,
+          o próximo clique reutiliza o mesmo ID e o backend evita duplicidade.
+        */
+        savingText.style.color = "#b42318";
+        savingText.textContent =
+          "Falha de comunicação. Clique em CONFIRMAR VOTO novamente.";
+
+      }finally{
+        confirmVoteBtn.disabled = false;
+        correctBtn.disabled = false;
+        confirmBackTop.disabled = false;
+      }
     });
 
     matricula.focus();
