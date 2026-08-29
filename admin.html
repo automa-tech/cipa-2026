@@ -976,6 +976,10 @@
               <span id="configStatusData" style="color:#5f6a62;font-size:13px">Consultando...</span>
             </div>
 
+            <button class="primary-btn hidden" id="settingsStartElection" style="width:100%;margin-bottom:10px">
+              ABRIR VOTAÇÃO
+            </button>
+
             <button class="primary-btn" id="settingsEndElection" style="width:100%;background:#b42318">
               ENCERRAR VOTAÇÃO
             </button>
@@ -1360,11 +1364,14 @@
         const dashboardEndBtn =
           document.getElementById("dashboardEndElection");
 
-        if(d.status === "ENCERRADA"){
+        if(d.status === "ABERTA"){
+          dashboardEndBtn.style.display = "";
+          renderizarResultadosBloqueados();
+        }else if(d.status === "ENCERRADA"){
           dashboardEndBtn.style.display = "none";
           await carregarApuracao(false);
         }else{
-          dashboardEndBtn.style.display = "";
+          dashboardEndBtn.style.display = "none";
           renderizarResultadosBloqueados();
         }
 
@@ -1614,6 +1621,7 @@
 
         const status = document.getElementById("configStatus");
         const data = document.getElementById("configStatusData");
+        const startBtn = document.getElementById("settingsStartElection");
         const endBtn = document.getElementById("settingsEndElection");
         const newBtn = document.getElementById("prepareNewElectionBtn");
 
@@ -1621,6 +1629,8 @@
           status.textContent = "STATUS ATUAL: ABERTA";
           data.textContent =
             c.dataAbertura ? `Aberta em ${c.dataAbertura}` : "Eleição aberta";
+          startBtn.classList.add("hidden");
+          startBtn.disabled = true;
           endBtn.style.display = "";
           endBtn.disabled = false;
           newBtn.disabled = true;
@@ -1629,12 +1639,16 @@
           status.textContent = "STATUS ATUAL: ENCERRADA";
           data.textContent =
             c.dataEncerramento ? `Encerrada em ${c.dataEncerramento}` : "Eleição encerrada";
+          startBtn.classList.add("hidden");
+          startBtn.disabled = true;
           endBtn.style.display = "none";
           newBtn.disabled = false;
 
         }else{
           status.textContent = "STATUS ATUAL: NÃO INICIADA";
           data.textContent = "Aguardando abertura da eleição";
+          startBtn.classList.remove("hidden");
+          startBtn.disabled = false;
           endBtn.style.display = "none";
           newBtn.disabled = true;
         }
@@ -1680,33 +1694,95 @@
       });
     });
 
-    // Encerramento real protegido pela sessão administrativa.
+    // Controles administrativos com confirmação personalizada.
     const modalBackdrop = document.getElementById("modalBackdrop");
     const modalCancel = document.getElementById("modalCancel");
     const modalConfirm = document.getElementById("modalConfirm");
+    const modalTitle = document.getElementById("modalTitle");
+    const modalText = document.getElementById("modalText");
 
-    function openEndModal(){
+    let modalAction = "";
+
+    function abrirModalConfirmacao({acao, titulo, texto, confirmar, perigo = false}){
+      modalAction = acao;
+      modalTitle.textContent = titulo;
+      modalText.textContent = texto;
+      modalConfirm.textContent = confirmar;
+      modalConfirm.classList.toggle("danger", perigo);
+      modalConfirm.disabled = false;
+      modalCancel.disabled = false;
       modalBackdrop.classList.remove("hidden");
     }
 
     function closeModal(){
       modalBackdrop.classList.add("hidden");
+      modalAction = "";
     }
 
-    document.getElementById("dashboardEndElection").addEventListener("click", openEndModal);
-    document.getElementById("settingsEndElection").addEventListener("click", openEndModal);
+    function abrirModalEncerramento(){
+      abrirModalConfirmacao({
+        acao: "ENCERRAR",
+        titulo: "Encerrar a eleição?",
+        texto: "Após o encerramento, novos votos não poderão ser registrados e a apuração final será liberada.",
+        confirmar: "ENCERRAR ELEIÇÃO",
+        perigo: true
+      });
+    }
+
+    function abrirModalAbertura(){
+      abrirModalConfirmacao({
+        acao: "ABRIR",
+        titulo: "Abrir a votação?",
+        texto: "Ao confirmar, a eleição ficará aberta imediatamente e os eleitores poderão começar a votar.",
+        confirmar: "ABRIR VOTAÇÃO"
+      });
+    }
+
+    function abrirModalNovaEleicao(){
+      abrirModalConfirmacao({
+        acao: "PREPARAR_NOVA",
+        titulo: "Preparar uma nova eleição?",
+        texto: "O sistema primeiro arquivará o resultado e a participação da eleição encerrada. Somente depois apagará os votos da área operacional, limpará o campo JÁ_VOTOU e criará um novo ID de eleição. Os candidatos serão mantidos.",
+        confirmar: "PREPARAR NOVA ELEIÇÃO",
+        perigo: true
+      });
+    }
+
+    document.getElementById("dashboardEndElection").addEventListener("click", abrirModalEncerramento);
+    document.getElementById("settingsEndElection").addEventListener("click", abrirModalEncerramento);
+    document.getElementById("settingsStartElection").addEventListener("click", abrirModalAbertura);
+    document.getElementById("prepareNewElectionBtn").addEventListener("click", abrirModalNovaEleicao);
     modalCancel.addEventListener("click", closeModal);
 
     modalConfirm.addEventListener("click", async () => {
-      if(!adminToken) return;
+      if(!adminToken || !modalAction) return;
 
+      const acaoAtual = modalAction;
       modalConfirm.disabled = true;
       modalCancel.disabled = true;
-      modalConfirm.textContent = "ENCERRANDO...";
+
+      const textosProcessando = {
+        ENCERRAR: "ENCERRANDO...",
+        ABRIR: "ABRINDO...",
+        PREPARAR_NOVA: "PREPARANDO..."
+      };
+      modalConfirm.textContent = textosProcessando[acaoAtual] || "PROCESSANDO...";
 
       try{
+        let acaoBackend = "";
+
+        if(acaoAtual === "ENCERRAR"){
+          acaoBackend = "ENCERRAR_ELEICAO_ADMIN";
+        }else if(acaoAtual === "ABRIR"){
+          acaoBackend = "ABRIR_ELEICAO_ADMIN";
+        }else if(acaoAtual === "PREPARAR_NOVA"){
+          acaoBackend = "PREPARAR_NOVA_ELEICAO_ADMIN";
+        }else{
+          return;
+        }
+
         const resultado = await chamarBackend({
-          acao: "ENCERRAR_ELEICAO_ADMIN",
+          acao: acaoBackend,
           token: adminToken
         });
 
@@ -1717,28 +1793,78 @@
             return;
           }
 
+          const titulosErro = {
+            ENCERRAR: "Não foi possível encerrar",
+            ABRIR: "Não foi possível abrir",
+            PREPARAR_NOVA: "Não foi possível preparar"
+          };
+
+          closeModal();
           mostrarAviso(
-            "Não foi possível encerrar",
-            resultado.mensagem ||
-            "Não foi possível encerrar a eleição."
+            titulosErro[acaoAtual] || "Operação não concluída",
+            resultado.mensagem || "A operação não pôde ser concluída."
           );
           return;
         }
 
         closeModal();
 
-        await carregarDashboard();
-        await carregarConfiguracoesAdmin();
+        if(acaoAtual === "PREPARAR_NOVA"){
+          apuracaoAtual = null;
+          renderizarResultadosBloqueados();
 
-        await carregarApuracao(false);
+          await Promise.all([
+            carregarDashboard(false),
+            carregarEleitoresAdmin(),
+            carregarConfiguracoesAdmin()
+          ]);
 
-        mostrarAviso(
-          "Eleição encerrada",
-          "Eleição encerrada com sucesso. Novos votos estão bloqueados e a apuração final foi liberada."
-        );
+          const historico = resultado.historico || {};
+          const detalhes = [
+            "A eleição anterior foi arquivada e a nova eleição está NÃO INICIADA.",
+            resultado.eleicaoArquivada ? `Eleição arquivada: ${resultado.eleicaoArquivada}.` : "",
+            resultado.novaEleicao ? `Novo ID: ${resultado.novaEleicao}.` : "",
+            historico.resultado ? `Histórico do resultado: ${historico.resultado}.` : "",
+            historico.participacao ? `Histórico da participação: ${historico.participacao}.` : ""
+          ].filter(Boolean).join(" ");
+
+          mostrarAviso(
+            "Nova eleição preparada",
+            detalhes
+          );
+          return;
+        }
+
+        if(acaoAtual === "ABRIR"){
+          apuracaoAtual = null;
+          renderizarResultadosBloqueados();
+
+          await Promise.all([
+            carregarDashboard(false),
+            carregarConfiguracoesAdmin()
+          ]);
+
+          mostrarAviso(
+            "Votação aberta",
+            "A eleição foi aberta com sucesso. Os eleitores já podem votar."
+          );
+          return;
+        }
+
+        if(acaoAtual === "ENCERRAR"){
+          await carregarDashboard(false);
+          await carregarConfiguracoesAdmin();
+          await carregarApuracao(false);
+
+          mostrarAviso(
+            "Eleição encerrada",
+            "Eleição encerrada com sucesso. Novos votos estão bloqueados e a apuração final foi liberada."
+          );
+        }
 
       }catch(erro){
         console.error(erro);
+        closeModal();
         mostrarAviso(
           "Falha de comunicação",
           "Confira sua conexão e tente novamente."
@@ -1747,7 +1873,6 @@
       }finally{
         modalConfirm.disabled = false;
         modalCancel.disabled = false;
-        modalConfirm.textContent = "ENCERRAR ELEIÇÃO";
       }
     });
 
@@ -1755,13 +1880,6 @@
       if(event.target === modalBackdrop) closeModal();
     });
 
-
-    document.getElementById("prepareNewElectionBtn").addEventListener("click", () => {
-      mostrarAviso(
-        "Nova eleição",
-        "A preparação automática de uma nova eleição será configurada na próxima etapa, com arquivamento dos dados atuais antes da limpeza."
-      );
-    });
 
     async function gerarCsvParticipacao(){
       if(!adminToken){
