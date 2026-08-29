@@ -610,6 +610,13 @@
       color:#5d675f;
       line-height:1.5;
       margin-bottom:20px;
+      overflow-wrap:anywhere;
+      word-break:break-word;
+      white-space:normal;
+    }
+
+    .modal{
+      overflow:hidden;
     }
 
     .modal-actions{
@@ -1819,13 +1826,11 @@
             carregarConfiguracoesAdmin()
           ]);
 
-          const historico = resultado.historico || {};
           const detalhes = [
-            "A eleição anterior foi arquivada e a nova eleição está NÃO INICIADA.",
+            "A eleição anterior foi arquivada com sucesso e a nova eleição está NÃO INICIADA.",
             resultado.eleicaoArquivada ? `Eleição arquivada: ${resultado.eleicaoArquivada}.` : "",
             resultado.novaEleicao ? `Novo ID: ${resultado.novaEleicao}.` : "",
-            historico.resultado ? `Histórico do resultado: ${historico.resultado}.` : "",
-            historico.participacao ? `Histórico da participação: ${historico.participacao}.` : ""
+            "Os históricos de resultado e participação foram salvos na planilha."
           ].filter(Boolean).join(" ");
 
           mostrarAviso(
