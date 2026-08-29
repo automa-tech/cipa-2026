@@ -1374,8 +1374,7 @@
       });
     });
 
-    // Encerramento permanece BLOQUEADO como teste visual nesta etapa.
-    // Não vamos encerrar a eleição de testes acidentalmente.
+    // Encerramento real protegido pela sessão administrativa.
     const modalBackdrop = document.getElementById("modalBackdrop");
     const modalCancel = document.getElementById("modalCancel");
     const modalConfirm = document.getElementById("modalConfirm");
@@ -1392,11 +1391,53 @@
     document.getElementById("settingsEndElection").addEventListener("click", openEndModal);
     modalCancel.addEventListener("click", closeModal);
 
-    modalConfirm.addEventListener("click", () => {
-      closeModal();
-      alert(
-        "O encerramento real ainda está bloqueado nesta etapa de teste."
-      );
+    modalConfirm.addEventListener("click", async () => {
+      if(!adminToken) return;
+
+      modalConfirm.disabled = true;
+      modalCancel.disabled = true;
+      modalConfirm.textContent = "ENCERRANDO...";
+
+      try{
+        const resultado = await chamarBackend({
+          acao: "ENCERRAR_ELEICAO_ADMIN",
+          token: adminToken
+        });
+
+        if(!resultado.sucesso){
+          if(resultado.codigo === "ADMIN_NAO_AUTORIZADO"){
+            closeModal();
+            mostrarLogin("Sua sessão expirou. Entre novamente.");
+            return;
+          }
+
+          alert(
+            resultado.mensagem ||
+            "Não foi possível encerrar a eleição."
+          );
+          return;
+        }
+
+        closeModal();
+
+        await carregarDashboard();
+        await carregarConfiguracoesAdmin();
+
+        alert(
+          "Eleição encerrada com sucesso. Novos votos estão bloqueados."
+        );
+
+      }catch(erro){
+        console.error(erro);
+        alert(
+          "Falha de comunicação. Confira sua conexão e tente novamente."
+        );
+
+      }finally{
+        modalConfirm.disabled = false;
+        modalCancel.disabled = false;
+        modalConfirm.textContent = "ENCERRAR ELEIÇÃO";
+      }
     });
 
     modalBackdrop.addEventListener("click", (event) => {
