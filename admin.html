@@ -1763,6 +1763,85 @@
       );
     });
 
+    async function gerarCsvParticipacao(){
+      if(!adminToken){
+        mostrarLogin("Sua sessão expirou. Entre novamente.");
+        return;
+      }
+
+      try{
+        const resultado = await chamarBackend({
+          acao: "ELEITORES_ADMIN",
+          token: adminToken
+        });
+
+        if(!resultado.sucesso){
+          if(resultado.codigo === "ADMIN_NAO_AUTORIZADO"){
+            mostrarLogin("Sua sessão expirou. Entre novamente.");
+            return;
+          }
+
+          throw new Error(
+            resultado.mensagem ||
+            "Não foi possível gerar o relatório de participação."
+          );
+        }
+
+        const eleitores = Array.isArray(resultado.eleitores)
+          ? resultado.eleitores
+          : [];
+
+        const linhas = [
+          ["MATRICULA","NOME","SITUACAO"]
+        ];
+
+        eleitores.forEach(eleitor => {
+          linhas.push([
+            eleitor.matricula,
+            eleitor.nome,
+            eleitor.situacao === "VOTOU"
+              ? "VOTOU"
+              : "NAO VOTOU"
+          ]);
+        });
+
+        const csv = "\uFEFF" + linhas
+          .map(linha =>
+            linha
+              .map(valor =>
+                `"${String(valor).replace(/"/g, '""')}"`
+              )
+              .join(";")
+          )
+          .join("\r\n");
+
+        const blob = new Blob([csv], {
+          type: "text/csv;charset=utf-8;"
+        });
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+
+        a.href = url;
+        a.download = "participacao_cipa_2026.csv";
+
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        URL.revokeObjectURL(url);
+
+      }catch(erro){
+        console.error(erro);
+
+        mostrarAviso(
+          "Falha ao exportar participação",
+          "Não foi possível gerar o relatório de participação. Tente novamente."
+        );
+      }
+    }
+
+
     function gerarCsvResultado(){
       if(!apuracaoAtual){
         mostrarAviso(
@@ -1827,6 +1906,12 @@
 
       URL.revokeObjectURL(url);
     }
+
+    document.getElementById("dashboardParticipationReport")
+      .addEventListener("click", gerarCsvParticipacao);
+
+    document.getElementById("participationReportBtn")
+      .addEventListener("click", gerarCsvParticipacao);
 
     document.getElementById("dashboardResultsReport")
       .addEventListener("click", gerarCsvResultado);
