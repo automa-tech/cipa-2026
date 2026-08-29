@@ -653,6 +653,97 @@
       .candidate-admin-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
       .report-grid,.settings-grid{grid-template-columns:1fr}
     }
+
+    .result-list{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+
+    .result-row{
+      display:grid;
+      grid-template-columns:54px minmax(0,1fr) 76px 72px;
+      gap:12px;
+      align-items:center;
+      padding:10px 12px;
+      border:1px solid #e3e8e4;
+      border-radius:10px;
+      background:#fff;
+    }
+
+    .result-num{
+      font-size:20px;
+      font-weight:900;
+      color:var(--verde);
+      text-align:center;
+    }
+
+    .result-name{
+      min-width:0;
+      font-weight:800;
+    }
+
+    .result-name small{
+      display:block;
+      margin-top:3px;
+      color:var(--muted);
+      font-weight:400;
+      font-size:12px;
+    }
+
+    .result-votes{
+      font-weight:900;
+      text-align:right;
+    }
+
+    .result-percent{
+      color:var(--muted);
+      text-align:right;
+      font-weight:700;
+    }
+
+    .result-summary{
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:12px;
+      margin-bottom:16px;
+    }
+
+    .result-summary-card{
+      border:1px solid var(--borda);
+      border-radius:12px;
+      padding:14px;
+      background:#fafcfa;
+    }
+
+    .result-summary-card span{
+      display:block;
+      color:var(--muted);
+      font-size:12px;
+      margin-bottom:5px;
+    }
+
+    .result-summary-card strong{
+      font-size:22px;
+    }
+
+    .notice-modal .modal-actions{
+      grid-template-columns:1fr;
+    }
+
+    @media (max-width:700px){
+      .result-row{
+        grid-template-columns:46px minmax(0,1fr) 64px;
+      }
+      .result-percent{
+        grid-column:2 / 4;
+        text-align:left;
+      }
+      .result-summary{
+        grid-template-columns:1fr;
+      }
+    }
+
   </style>
 </head>
 
@@ -769,19 +860,21 @@
           </div>
 
           <div class="panel">
-            <h3>Votos por candidato (oculto durante a votação)</h3>
-            <div class="locked">
-              <div class="lock-icon">🔒</div>
-              <div>Resultados disponíveis somente após o encerramento da eleição.</div>
-              <strong>A votação está em andamento.</strong>
+            <h3 id="dashboardResultsTitle">Votos por candidato (oculto durante a votação)</h3>
+            <div id="dashboardResultsContent">
+              <div class="locked">
+                <div class="lock-icon">🔒</div>
+                <div>Resultados disponíveis somente após o encerramento da eleição.</div>
+                <strong>A votação está em andamento.</strong>
+              </div>
             </div>
           </div>
 
           <div class="panel">
             <h3>Ações rápidas</h3>
             <div class="quick-actions">
-              <button class="action-btn">▤ Exportar relatório de participação</button>
-              <button class="action-btn">🔒 Exportar votos (após encerramento)</button>
+              <button class="action-btn" id="dashboardParticipationReport">▤ Exportar relatório de participação</button>
+              <button class="action-btn" id="dashboardResultsReport" disabled>🔒 Exportar votos (após encerramento)</button>
               <button class="action-btn danger" id="dashboardEndElection">⚑ Encerrar eleição</button>
             </div>
           </div>
@@ -822,7 +915,7 @@
           <div class="updated">Apuração</div>
         </div>
 
-        <div class="panel">
+        <div class="panel" id="votesResultsPanel">
           <div class="locked" style="height:330px">
             <div class="lock-icon">🔒</div>
             <div style="font-size:18px;font-weight:800;color:#364039">Resultados bloqueados</div>
@@ -855,13 +948,13 @@
           <div class="report-card">
             <h3>Relatório de participação</h3>
             <p>Lista os eleitores e informa apenas se votaram ou ainda não votaram. Não contém candidato escolhido.</p>
-            <button class="outline-btn">EXPORTAR PARTICIPAÇÃO</button>
+            <button class="outline-btn" id="participationReportBtn">EXPORTAR PARTICIPAÇÃO</button>
           </div>
 
           <div class="report-card">
             <h3>Relatório de resultado</h3>
             <p>Será liberado somente após o encerramento da eleição, com votos por candidato, percentuais e votos em branco.</p>
-            <button class="outline-btn" disabled>🔒 BLOQUEADO DURANTE A VOTAÇÃO</button>
+            <button class="outline-btn" id="resultsReportBtn" disabled>🔒 BLOQUEADO DURANTE A VOTAÇÃO</button>
           </div>
         </div>
       </section>
@@ -913,12 +1006,25 @@
   </div>
 
 
+  <!-- AVISO PERSONALIZADO -->
+  <div class="modal-backdrop hidden notice-modal" id="noticeBackdrop">
+    <div class="modal">
+      <h3 id="noticeTitle">Aviso</h3>
+      <p id="noticeText"></p>
+      <div class="modal-actions">
+        <button class="modal-confirm" id="noticeOk">OK</button>
+      </div>
+    </div>
+  </div>
+
+
   <script>
     const WEB_APP_URL =
       "https://script.google.com/macros/s/AKfycbwt4qpaVbg9W6psYWTN50f_YH5X-RImWGEUZaiqV1ClPy9lpel8F15Ls8_lTySC7HjnyA/exec";
 
     let adminToken = sessionStorage.getItem("cipaAdminToken") || "";
     let atualizacaoAutomatica = null;
+    let apuracaoAtual = null;
 
     const loginScreen = document.getElementById("loginScreen");
     const adminApp = document.getElementById("adminApp");
@@ -978,6 +1084,194 @@
       atualizacaoAutomatica = setInterval(() => {
         carregarDashboard(false);
       }, 10000);
+    }
+
+
+    const noticeBackdrop = document.getElementById("noticeBackdrop");
+    const noticeTitle = document.getElementById("noticeTitle");
+    const noticeText = document.getElementById("noticeText");
+    const noticeOk = document.getElementById("noticeOk");
+
+    function mostrarAviso(titulo, mensagem){
+      noticeTitle.textContent = titulo || "Aviso";
+      noticeText.textContent = mensagem || "";
+      noticeBackdrop.classList.remove("hidden");
+      noticeOk.focus();
+    }
+
+    function fecharAviso(){
+      noticeBackdrop.classList.add("hidden");
+    }
+
+    noticeOk.addEventListener("click", fecharAviso);
+
+    noticeBackdrop.addEventListener("click", (event) => {
+      if(event.target === noticeBackdrop){
+        fecharAviso();
+      }
+    });
+
+    function percentualBR(valor){
+      return Number(valor || 0)
+        .toFixed(1)
+        .replace(".", ",") + "%";
+    }
+
+    function htmlResultadoLinhas(apuracao, limite = null){
+      const itens = Array.isArray(apuracao.resultados)
+        ? apuracao.resultados
+        : [];
+
+      const lista = limite ? itens.slice(0, limite) : itens;
+
+      if(lista.length === 0){
+        return '<div style="color:var(--muted)">Nenhum candidato cadastrado.</div>';
+      }
+
+      return `
+        <div class="result-list">
+          ${lista.map(item => `
+            <div class="result-row">
+              <div class="result-num">${item.numero}</div>
+              <div class="result-name">
+                ${item.nome}
+                <small>${item.setor || ""}</small>
+              </div>
+              <div class="result-votes">${item.votos} voto${item.votos === 1 ? "" : "s"}</div>
+              <div class="result-percent">${percentualBR(item.percentual)}</div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    async function carregarApuracao(mostrarErro = true){
+      if(!adminToken) return null;
+
+      try{
+        const resultado = await chamarBackend({
+          acao: "APURACAO_ADMIN",
+          token: adminToken
+        });
+
+        if(!resultado.sucesso){
+          if(resultado.codigo === "ADMIN_NAO_AUTORIZADO"){
+            mostrarLogin("Sua sessão expirou. Entre novamente.");
+            return null;
+          }
+
+          if(resultado.codigo === "RESULTADOS_BLOQUEADOS"){
+            apuracaoAtual = null;
+            renderizarResultadosBloqueados();
+            return null;
+          }
+
+          throw new Error(
+            resultado.mensagem ||
+            "Não foi possível carregar a apuração."
+          );
+        }
+
+        apuracaoAtual = resultado.apuracao;
+        renderizarApuracao(apuracaoAtual);
+        return apuracaoAtual;
+
+      }catch(erro){
+        console.error(erro);
+
+        if(mostrarErro){
+          mostrarAviso(
+            "Falha ao carregar resultados",
+            "Não foi possível consultar a apuração. Tente novamente."
+          );
+        }
+
+        return null;
+      }
+    }
+
+    function renderizarResultadosBloqueados(){
+      const dashTitle = document.getElementById("dashboardResultsTitle");
+      const dashContent = document.getElementById("dashboardResultsContent");
+      const votesPanel = document.getElementById("votesResultsPanel");
+
+      dashTitle.textContent = "Votos por candidato (oculto durante a votação)";
+      dashContent.innerHTML = `
+        <div class="locked">
+          <div class="lock-icon">🔒</div>
+          <div>Resultados disponíveis somente após o encerramento da eleição.</div>
+          <strong>A votação está em andamento.</strong>
+        </div>
+      `;
+
+      votesPanel.innerHTML = `
+        <div class="locked" style="height:330px">
+          <div class="lock-icon">🔒</div>
+          <div style="font-size:18px;font-weight:800;color:#364039">Resultados bloqueados</div>
+          <div>Os votos por candidato e os votos em branco só serão exibidos após o encerramento da eleição.</div>
+          <strong>A eleição ainda está aberta.</strong>
+        </div>
+      `;
+
+      const dashboardReport = document.getElementById("dashboardResultsReport");
+      const reportBtn = document.getElementById("resultsReportBtn");
+
+      dashboardReport.disabled = true;
+      dashboardReport.textContent = "🔒 Exportar votos (após encerramento)";
+
+      reportBtn.disabled = true;
+      reportBtn.textContent = "🔒 BLOQUEADO DURANTE A VOTAÇÃO";
+    }
+
+    function renderizarApuracao(a){
+      if(!a) return;
+
+      const dashTitle = document.getElementById("dashboardResultsTitle");
+      const dashContent = document.getElementById("dashboardResultsContent");
+      const votesPanel = document.getElementById("votesResultsPanel");
+
+      dashTitle.textContent = "Resultado final";
+
+      dashContent.innerHTML = `
+        <div class="result-summary" style="grid-template-columns:1fr 1fr">
+          <div class="result-summary-card">
+            <span>Total de votos</span>
+            <strong>${a.totalVotos}</strong>
+          </div>
+          <div class="result-summary-card">
+            <span>Votos em branco</span>
+            <strong>${a.votosBrancos}</strong>
+          </div>
+        </div>
+        ${htmlResultadoLinhas(a, 3)}
+      `;
+
+      votesPanel.innerHTML = `
+        <div class="result-summary">
+          <div class="result-summary-card">
+            <span>Total de votos</span>
+            <strong>${a.totalVotos}</strong>
+          </div>
+          <div class="result-summary-card">
+            <span>Votos em branco</span>
+            <strong>${a.votosBrancos}</strong>
+          </div>
+          <div class="result-summary-card">
+            <span>% em branco</span>
+            <strong>${percentualBR(a.percentualBrancos)}</strong>
+          </div>
+        </div>
+        ${htmlResultadoLinhas(a)}
+      `;
+
+      const dashboardReport = document.getElementById("dashboardResultsReport");
+      const reportBtn = document.getElementById("resultsReportBtn");
+
+      dashboardReport.disabled = false;
+      dashboardReport.textContent = "▤ Exportar resultado final";
+
+      reportBtn.disabled = false;
+      reportBtn.textContent = "EXPORTAR RESULTADO";
     }
 
     async function carregarDashboard(mostrarErro = true){
@@ -1061,6 +1355,17 @@
           statusEl.textContent = "NÃO INICIADA";
           statusEl.style.color = "var(--amarelo)";
           statusData.textContent = "Aguardando abertura";
+        }
+
+        const dashboardEndBtn =
+          document.getElementById("dashboardEndElection");
+
+        if(d.status === "ENCERRADA"){
+          dashboardEndBtn.style.display = "none";
+          await carregarApuracao(false);
+        }else{
+          dashboardEndBtn.style.display = "";
+          renderizarResultadosBloqueados();
         }
 
         const agora = new Date();
@@ -1357,12 +1662,13 @@
 
         if(page === "dashboard") carregarDashboard(false);
         if(page === "eleitores") carregarEleitoresAdmin();
+        if(page === "votos") carregarApuracao(false);
         if(page === "candidatos") carregarCandidatosAdmin();
         if(page === "configuracoes") carregarConfiguracoesAdmin();
       });
     });
 
-    // A tabela de Eleitores ainda é visual nesta etapa.
+    // Pesquisa sobre a lista real de eleitores carregada do backend.
     const electorSearch = document.getElementById("electorSearch");
     electorSearch.addEventListener("input", () => {
       const term = electorSearch.value.toLowerCase().trim();
@@ -1411,7 +1717,8 @@
             return;
           }
 
-          alert(
+          mostrarAviso(
+            "Não foi possível encerrar",
             resultado.mensagem ||
             "Não foi possível encerrar a eleição."
           );
@@ -1423,14 +1730,18 @@
         await carregarDashboard();
         await carregarConfiguracoesAdmin();
 
-        alert(
-          "Eleição encerrada com sucesso. Novos votos estão bloqueados."
+        await carregarApuracao(false);
+
+        mostrarAviso(
+          "Eleição encerrada",
+          "Eleição encerrada com sucesso. Novos votos estão bloqueados e a apuração final foi liberada."
         );
 
       }catch(erro){
         console.error(erro);
-        alert(
-          "Falha de comunicação. Confira sua conexão e tente novamente."
+        mostrarAviso(
+          "Falha de comunicação",
+          "Confira sua conexão e tente novamente."
         );
 
       }finally{
@@ -1443,6 +1754,85 @@
     modalBackdrop.addEventListener("click", (event) => {
       if(event.target === modalBackdrop) closeModal();
     });
+
+
+    document.getElementById("prepareNewElectionBtn").addEventListener("click", () => {
+      mostrarAviso(
+        "Nova eleição",
+        "A preparação automática de uma nova eleição será configurada na próxima etapa, com arquivamento dos dados atuais antes da limpeza."
+      );
+    });
+
+    function gerarCsvResultado(){
+      if(!apuracaoAtual){
+        mostrarAviso(
+          "Resultado indisponível",
+          "A apuração final ainda não está disponível."
+        );
+        return;
+      }
+
+      const linhas = [
+        ["NUMERO","CANDIDATO","SETOR","VOTOS","PERCENTUAL"]
+      ];
+
+      apuracaoAtual.resultados.forEach(item => {
+        linhas.push([
+          item.numero,
+          item.nome,
+          item.setor || "",
+          item.votos,
+          percentualBR(item.percentual)
+        ]);
+      });
+
+      linhas.push([
+        "",
+        "VOTOS EM BRANCO",
+        "",
+        apuracaoAtual.votosBrancos,
+        percentualBR(apuracaoAtual.percentualBrancos)
+      ]);
+
+      linhas.push([
+        "",
+        "TOTAL DE VOTOS",
+        "",
+        apuracaoAtual.totalVotos,
+        "100,0%"
+      ]);
+
+      const csv = "\uFEFF" + linhas
+        .map(linha =>
+          linha
+            .map(valor =>
+              `"${String(valor).replace(/"/g, '""')}"`
+            )
+            .join(";")
+        )
+        .join("\r\n");
+
+      const blob = new Blob([csv], {
+        type: "text/csv;charset=utf-8;"
+      });
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+
+      a.href = url;
+      a.download = "resultado_cipa_2026.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      URL.revokeObjectURL(url);
+    }
+
+    document.getElementById("dashboardResultsReport")
+      .addEventListener("click", gerarCsvResultado);
+
+    document.getElementById("resultsReportBtn")
+      .addEventListener("click", gerarCsvResultado);
 
     refreshDashboard.addEventListener("click", () => carregarDashboard());
 
